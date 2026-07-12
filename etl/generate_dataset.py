@@ -1,564 +1,331 @@
+"""Generate a realistic synthetic personal finance dataset.
+
+The dataset models an IIT Delhi student's transactions from 2023-01-01 to
+2024-12-31 and intentionally injects data quality issues for the ETL pipeline.
+"""
+
+from __future__ import annotations
+
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# -----------------------------
-# Reproducibility
-# -----------------------------
-random.seed(42)
-np.random.seed(42)
 
-# -----------------------------
-# Date Range
-# -----------------------------
+RANDOM_SEED = 42
 START_DATE = datetime(2023, 1, 1)
 END_DATE = datetime(2024, 12, 31)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RAW_OUTPUT_PATH = PROJECT_ROOT / "data" / "raw" / "transactions_raw.csv"
 
-# -----------------------------
-# Payment Methods
-# -----------------------------
-PAYMENT_METHODS = [
-    "UPI",
-    "Credit Card",
-    "Debit Card",
-    "Cash",
-    "Net Banking"
-]
+PAYMENT_METHODS = ["UPI", "Credit Card", "Debit Card", "Cash", "Net Banking"]
+LOCATIONS = ["New Delhi", "Noida", "Gurugram", "Online", "Hyderabad", "Mumbai"]
 
-# -----------------------------
-# Locations
-# -----------------------------
-LOCATIONS = [
-    "New Delhi",
-    "Noida",
-    "Gurugram",
-    "Online",
-    "Hyderabad",
-    "Mumbai"
-]
-
-# -----------------------------
-# Income Categories
-# -----------------------------
-INCOME = {
-    "Salary/Stipend": (7000, 9000),
-    "Family Support": (9000, 15000),
+INCOME_RANGES = {
+    "Salary/Stipend": (12000, 18000),
+    "Family Support": (25000, 45000),
     "Freelance": (3000, 12000),
     "Interest": (20, 500),
     "Cashback": (20, 300),
-    "Refund": (100, 2000)
+    "Refund": (100, 2000),
 }
 
-# -----------------------------
-# Expense Categories
-# -----------------------------
-EXPENSE = {
+EXPENSE_RANGES = {
     "Rent": (4500, 6000),
-    "Food & Dining": (100, 500),
-    "Groceries": (250, 1500),
-    "Transportation": (50, 600),
-    "Shopping": (400, 5000),
-    "Entertainment": (150, 1200),
-    "Health": (200, 3000),
-    "Education": (500, 4000),
-    "Bills": (199, 1500),
-    "Travel": (1500, 12000),
-    "Investment": (500, 4000),
-    "Miscellaneous": (100, 1500)
+    "Food & Dining": (80, 350),
+    "Groceries": (150, 900),
+    "Transportation": (20, 250),
+    "Shopping": (250, 2500),
+    "Entertainment": (100, 800),
+    "Health": (100, 1800),
+    "Education": (300, 2500),
+    "Bills": (100, 1200),
+    "Travel": (700, 8000),
+    "Investment": (500, 3000),
+    "Miscellaneous": (50, 800),
 }
 
-# -----------------------------
-# Merchants
-# -----------------------------
+EXPENSE_CATEGORY_WEIGHTS = {
+    "Food & Dining": 0.26,
+    "Transportation": 0.18,
+    "Groceries": 0.13,
+    "Bills": 0.08,
+    "Miscellaneous": 0.08,
+    "Entertainment": 0.07,
+    "Shopping": 0.07,
+    "Education": 0.04,
+    "Health": 0.03,
+    "Investment": 0.03,
+    "Travel": 0.02,
+    "Rent": 0.01,
+}
+
 MERCHANTS = {
+    "Salary/Stipend": ["IIT Delhi"],
+    "Family Support": ["Parents"],
+    "Freelance": ["Client Payment", "Upwork Client", "Campus Project"],
+    "Interest": ["HDFC Bank", "SBI Savings"],
+    "Cashback": ["Google Pay Rewards", "PhonePe Rewards", "Amazon Pay"],
+    "Refund": ["Amazon Refund", "IRCTC Refund", "Myntra Refund"],
+    "Rent": ["Hostel Fee"],
     "Food & Dining": [
         "Swiggy",
         "Zomato",
         "Domino's",
         "McDonald's",
         "Burger King",
-        "Campus Canteen"
+        "Campus Canteen",
+        "Chaayos",
     ],
-
-    "Groceries": [
-        "DMart",
-        "Reliance Fresh",
-        "BigBasket",
-        "Blinkit"
-    ],
-
-    "Transportation": [
-        "Uber",
-        "Ola",
-        "Delhi Metro"
-    ],
-
-    "Shopping": [
-        "Amazon",
-        "Flipkart",
-        "Myntra",
-        "Ajio"
-    ],
-
-    "Entertainment": [
-        "Netflix",
-        "Spotify",
-        "PVR Cinemas",
-        "BookMyShow"
-    ],
-
-    "Bills": [
-        "Airtel",
-        "Jio",
-        "BSES"
-    ],
-
-    "Travel": [
-        "IRCTC",
-        "IndiGo",
-        "Air India",
-        "OYO"
-    ],
-
-    "Investment": [
-        "Groww",
-        "Zerodha"
-    ],
-
-    "Education": [
-        "Coursera",
-        "Udemy",
-        "LeetCode"
-    ],
-
-    "Health": [
-        "Apollo Pharmacy",
-        "1mg"
-    ],
-
-    "Rent": [
-        "Hostel Fee"
-    ],
-
-    "Miscellaneous": [
-        "Stationery",
-        "Gift Shop",
-        "Printing Shop"
-    ]
+    "Groceries": ["DMart", "Reliance Fresh", "BigBasket", "Blinkit"],
+    "Transportation": ["Uber", "Ola", "Delhi Metro", "Rapido"],
+    "Shopping": ["Amazon", "Flipkart", "Myntra", "Ajio"],
+    "Entertainment": ["Netflix", "Spotify", "PVR Cinemas", "BookMyShow"],
+    "Health": ["Apollo Pharmacy", "Tata 1mg", "Practo"],
+    "Education": ["Coursera", "Udemy", "LeetCode", "Gate Academy"],
+    "Bills": ["Airtel", "Jio", "BSES", "Hostel Laundry"],
+    "Travel": ["IRCTC", "IndiGo", "Air India", "OYO", "MakeMyTrip"],
+    "Investment": ["Groww", "Zerodha", "NPS"],
+    "Miscellaneous": ["Stationery", "Gift Shop", "Printing Shop"],
 }
 
-# -----------------------------
-# Helper Functions
-# -----------------------------
-def random_date():
-    """Return a random date between START_DATE and END_DATE."""
-    days = (END_DATE - START_DATE).days
-    return START_DATE + timedelta(days=random.randint(0, days))
+INCONSISTENT_CATEGORIES = {
+    "Food & Dining": ["Food", "Dining", "food & dining", "FOOD"],
+    "Transportation": ["Transport", "transportation", "Commute"],
+    "Shopping": ["shopping", "SHOPPING"],
+    "Entertainment": ["Movies", "Fun", "entertainment"],
+    "Bills": ["utilities", "Utility Bills"],
+    "Miscellaneous": ["misc", "Others"],
+}
 
 
-def random_amount(category, income=True):
-    """Generate amount based on category."""
-    if income:
-        low, high = INCOME[category]
-    else:
-        low, high = EXPENSE[category]
-
+def random_amount(category: str, transaction_type: str) -> float:
+    """Return a category-aware transaction amount."""
+    ranges = INCOME_RANGES if transaction_type == "Income" else EXPENSE_RANGES
+    low, high = ranges[category]
     return round(random.uniform(low, high), 2)
 
 
-def random_payment():
-    return random.choice(PAYMENT_METHODS)
-
-
-def random_location():
-    return random.choice(LOCATIONS)
-
-
-def merchant(category):
-    return random.choice(MERCHANTS[category])
-
-# -----------------------------
-# Generate Transactions
-# -----------------------------
-
-transactions = []
-balance = 20000.0
-txn_id = 100001
-
-current = START_DATE
-
-while current <= END_DATE:
-
-    # -------------------------
-    # Monthly Income
-    # -------------------------
-
-    stipend = random_amount("Salary/Stipend", True)
-
-    balance += stipend
-
-    transactions.append({
-        "Transaction_ID": txn_id,
-        "Date": current,
-        "Merchant": "IIT Delhi",
-        "Category": "Salary/Stipend",
-        "Amount": stipend,
-        "Payment_Method": "Net Banking",
-        "Location": "New Delhi",
-        "Income_Expense": "Income",
-        "Account_Balance": round(balance,2)
-    })
-
-    txn_id += 1
-
-    family = random_amount("Family Support", True)
-
-    balance += family
-
-    transactions.append({
-        "Transaction_ID": txn_id,
-        "Date": current + timedelta(days=1),
-        "Merchant": "Parents",
-        "Category": "Family Support",
-        "Amount": family,
-        "Payment_Method": "Net Banking",
-        "Location": "Hyderabad",
-        "Income_Expense": "Income",
-        "Account_Balance": round(balance,2)
-    })
-
-    txn_id += 1
-
-    # Freelance income (25% chance)
-
-    if random.random() < 0.25:
-
-        freelance = random_amount("Freelance", True)
-
-        balance += freelance
-
-        transactions.append({
-            "Transaction_ID": txn_id,
-            "Date": current + timedelta(days=random.randint(2,25)),
-            "Merchant": "Client Payment",
-            "Category": "Freelance",
-            "Amount": freelance,
-            "Payment_Method": "Net Banking",
-            "Location": "Online",
-            "Income_Expense": "Income",
-            "Account_Balance": round(balance,2)
-        })
-
-        txn_id += 1
-
-    # -------------------------
-    # Monthly Rent
-    # -------------------------
-
-    rent = random_amount("Rent", False)
-
-    balance -= rent
-
-    transactions.append({
-        "Transaction_ID": txn_id,
-        "Date": current + timedelta(days=3),
-        "Merchant": "Hostel Fee",
-        "Category": "Rent",
-        "Amount": rent,
-        "Payment_Method": "UPI",
-        "Location": "New Delhi",
-        "Income_Expense": "Expense",
-        "Account_Balance": round(balance,2)
-    })
-
-    txn_id += 1
-
-    # -------------------------
-    # Daily Transactions
-    # -------------------------
-
-    for _ in range(random.randint(70,110)):
-
-        category = random.choice(list(EXPENSE.keys()))
-
-        amount = random_amount(category, False)
-
-        merchant_name = merchant(category)
-
-        date = current + timedelta(days=random.randint(0,27))
-
-        # Seasonal travel spike
-
-        if category == "Travel" and date.month in [5,6,10,12]:
-            amount *= random.uniform(1.4,2.2)
-
-        # Festival shopping
-
-        if category == "Shopping" and date.month in [10,11]:
-            amount *= random.uniform(1.3,1.8)
-
-        amount = round(amount,2)
-
-        balance -= amount
-
-        transactions.append({
-
-            "Transaction_ID": txn_id,
-
+def add_transaction(
+    transactions: list[dict[str, object]],
+    transaction_id: int,
+    date: datetime,
+    merchant: str,
+    category: str,
+    amount: float,
+    payment_method: str,
+    location: str,
+    income_expense: str,
+    balance: float,
+) -> None:
+    """Append one transaction row with consistent column names."""
+    transactions.append(
+        {
+            "Transaction_ID": transaction_id,
             "Date": date,
-
-            "Merchant": merchant_name,
-
+            "Merchant": merchant,
             "Category": category,
-
-            "Amount": amount,
-
-            "Payment_Method": random_payment(),
-
-            "Location": random_location(),
-
-            "Income_Expense": "Expense",
-
-            "Account_Balance": round(balance,2)
-
-        })
-
-        txn_id += 1
-
-    # next month
-
-    if current.month == 12:
-        current = datetime(current.year + 1,1,1)
-    else:
-        current = datetime(current.year,current.month + 1,1)
-
-
-# ----------------------------------
-# Create DataFrame
-# ----------------------------------
-
-df = pd.DataFrame(transactions)
-
-# ----------------------------------
-# Shuffle rows
-# ----------------------------------
-
-df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-
-# ----------------------------------
-# Inject Missing Merchant
-# ----------------------------------
-
-missing_merchants = np.random.choice(
-    df.index,
-    size=int(len(df) * 0.03),
-    replace=False
-)
-
-df.loc[missing_merchants, "Merchant"] = np.nan
-
-# ----------------------------------
-# Inject Missing Payment Method
-# ----------------------------------
-
-missing_payment = np.random.choice(
-    df.index,
-    size=int(len(df) * 0.02),
-    replace=False
-)
-
-df.loc[missing_payment, "Payment_Method"] = np.nan
-
-# ----------------------------------
-# Inject Missing Location
-# ----------------------------------
-
-missing_location = np.random.choice(
-    df.index,
-    size=int(len(df) * 0.01),
-    replace=False
-)
-
-df.loc[missing_location, "Location"] = np.nan
-
-# ----------------------------------
-# Duplicate Rows
-# ----------------------------------
-
-duplicates = df.sample(
-    frac=0.02,
-    random_state=42
-)
-
-df = pd.concat([df, duplicates], ignore_index=True)
-
-# ----------------------------------
-# Negative Expense Amounts
-# ----------------------------------
-
-expense_rows = df[df["Income_Expense"] == "Expense"].sample(
-    frac=0.01,
-    random_state=42
-).index
-
-df.loc[expense_rows, "Amount"] *= -1
-
-# ----------------------------------
-# Category Inconsistencies
-# ----------------------------------
-
-replace_categories = {
-
-    "Food & Dining": [
-        "Food",
-        "Dining",
-        "food & dining",
-        "FOOD"
-    ],
-
-    "Transportation": [
-        "Transport",
-        "transportation"
-    ],
-
-    "Shopping": [
-        "shopping",
-        "SHOPPING"
-    ],
-
-    "Entertainment": [
-        "Movies",
-        "Fun",
-        "entertainment"
-    ]
-
-}
-
-for original, alternatives in replace_categories.items():
-
-    idx = df[df["Category"] == original].sample(
-        frac=0.25,
-        random_state=42
-    ).index
-
-    df.loc[idx, "Category"] = np.random.choice(
-        alternatives,
-        size=len(idx)
+            "Amount": round(amount, 2),
+            "Payment_Method": payment_method,
+            "Location": location,
+            "Income_Expense": income_expense,
+            "Account_Balance": round(balance, 2),
+        }
     )
 
-# ----------------------------------
-# Extra Spaces
-# ----------------------------------
 
-merchant_idx = df.sample(
-    frac=0.02,
-    random_state=12
-).index
+def generate_clean_base_transactions() -> pd.DataFrame:
+    """Generate clean transactions before intentional quality issues are added."""
+    transactions: list[dict[str, object]] = []
+    balance = 20000.0
+    transaction_id = 100001
+    current_month = START_DATE
 
-df.loc[merchant_idx, "Merchant"] = (
-    df.loc[merchant_idx, "Merchant"]
-    .astype(str)
-    .apply(lambda x: "  " + x + " ")
-)
+    while current_month <= END_DATE:
+        for category, day_offset in [
+            ("Salary/Stipend", 0),
+            ("Family Support", 1),
+        ]:
+            amount = random_amount(category, "Income")
+            balance += amount
+            add_transaction(
+                transactions,
+                transaction_id,
+                current_month + timedelta(days=day_offset),
+                random.choice(MERCHANTS[category]),
+                category,
+                amount,
+                "Net Banking",
+                "New Delhi" if category == "Salary/Stipend" else "Hyderabad",
+                "Income",
+                balance,
+            )
+            transaction_id += 1
 
-# ----------------------------------
-# Mixed Case
-# ----------------------------------
+        optional_income_categories = ["Freelance", "Interest", "Cashback", "Refund"]
+        for category in optional_income_categories:
+            if random.random() < 0.35:
+                amount = random_amount(category, "Income")
+                balance += amount
+                add_transaction(
+                    transactions,
+                    transaction_id,
+                    current_month + timedelta(days=random.randint(2, 27)),
+                    random.choice(MERCHANTS[category]),
+                    category,
+                    amount,
+                    "Net Banking" if category in {"Freelance", "Interest"} else "UPI",
+                    random.choice(["Online", "New Delhi", "Hyderabad"]),
+                    "Income",
+                    balance,
+                )
+                transaction_id += 1
 
-merchant_idx2 = df.sample(
-    frac=0.02,
-    random_state=15
-).index
+        rent = random_amount("Rent", "Expense")
+        balance -= rent
+        add_transaction(
+            transactions,
+            transaction_id,
+            current_month + timedelta(days=3),
+            "Hostel Fee",
+            "Rent",
+            rent,
+            "UPI",
+            "New Delhi",
+            "Expense",
+            balance,
+        )
+        transaction_id += 1
 
-df.loc[merchant_idx2, "Merchant"] = (
-    df.loc[merchant_idx2, "Merchant"]
-    .astype(str)
-    .str.upper()
-)
+        for _ in range(random.randint(86, 112)):
+            category = random.choices(
+                population=list(EXPENSE_CATEGORY_WEIGHTS),
+                weights=list(EXPENSE_CATEGORY_WEIGHTS.values()),
+                k=1,
+            )[0]
+            amount = random_amount(category, "Expense")
+            date = current_month + timedelta(days=random.randint(0, 27))
 
-# ----------------------------------
-# Mixed Date Formats
-# ----------------------------------
+            if category == "Travel" and date.month in {5, 6, 10, 12}:
+                amount *= random.uniform(1.4, 2.2)
+            if category == "Shopping" and date.month in {10, 11}:
+                amount *= random.uniform(1.3, 1.8)
 
-formats = [
-    "%Y-%m-%d",
-    "%d/%m/%Y",
-    "%d-%b-%Y"
-]
+            amount = round(amount, 2)
+            balance -= amount
+            add_transaction(
+                transactions,
+                transaction_id,
+                date,
+                random.choice(MERCHANTS[category]),
+                category,
+                amount,
+                random.choice(PAYMENT_METHODS),
+                random.choice(LOCATIONS),
+                "Expense",
+                balance,
+            )
+            transaction_id += 1
 
-formatted_dates = []
+        if current_month.month == 12:
+            current_month = datetime(current_month.year + 1, 1, 1)
+        else:
+            current_month = datetime(current_month.year, current_month.month + 1, 1)
 
-for d in df["Date"]:
+    df = pd.DataFrame(transactions).sort_values(["Date", "Transaction_ID"]).reset_index(
+        drop=True
+    )
+    df["Transaction_ID"] = range(100001, 100001 + len(df))
 
-    fmt = random.choice(formats)
+    balance = 20000.0
+    balances = []
+    for _, row in df.iterrows():
+        if row["Income_Expense"] == "Income":
+            balance += row["Amount"]
+        else:
+            balance -= row["Amount"]
+        balances.append(round(balance, 2))
+    df["Account_Balance"] = balances
 
-    formatted_dates.append(d.strftime(fmt))
-
-df["Date"] = formatted_dates
-
-# ----------------------------------
-# Sort by Transaction ID
-# ----------------------------------
-
-df = df.sort_values("Transaction_ID").reset_index(drop=True)
+    return df
 
 
-# ----------------------------------
-# Save Dataset
-# ----------------------------------
+def inject_dirty_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Inject realistic data quality problems for cleaning practice."""
+    dirty = df.copy()
 
-output_path = "data/raw/transactions_raw.csv"
+    dirty.loc[
+        np.random.choice(dirty.index, size=int(len(dirty) * 0.03), replace=False),
+        "Merchant",
+    ] = np.nan
+    dirty.loc[
+        np.random.choice(dirty.index, size=int(len(dirty) * 0.02), replace=False),
+        "Payment_Method",
+    ] = np.nan
+    dirty.loc[
+        np.random.choice(dirty.index, size=int(len(dirty) * 0.01), replace=False),
+        "Location",
+    ] = np.nan
 
-df.to_csv(
-    output_path,
-    index=False
-)
+    duplicate_rows = dirty.sample(frac=0.02, random_state=RANDOM_SEED)
+    dirty = pd.concat([dirty, duplicate_rows], ignore_index=True)
 
-print("=" * 50)
-print("Dataset Generated Successfully")
-print("=" * 50)
+    expense_sample = dirty[dirty["Income_Expense"] == "Expense"].sample(
+        frac=0.01,
+        random_state=RANDOM_SEED,
+    )
+    dirty.loc[expense_sample.index, "Amount"] *= -1
 
-print(f"Rows: {len(df):,}")
-print(f"Columns: {len(df.columns)}")
-print()
+    for original, alternatives in INCONSISTENT_CATEGORIES.items():
+        category_rows = dirty[dirty["Category"] == original]
+        if category_rows.empty:
+            continue
+        indexes = category_rows.sample(frac=0.25, random_state=RANDOM_SEED).index
+        dirty.loc[indexes, "Category"] = np.random.choice(alternatives, size=len(indexes))
 
-print(df.head())
+    for column in ["Merchant", "Category", "Payment_Method", "Location"]:
+        indexes = dirty.sample(frac=0.02, random_state=len(column)).index
+        dirty.loc[indexes, column] = dirty.loc[indexes, column].astype(str).apply(
+            lambda value: f"  {value} "
+        )
 
-print()
+    merchant_indexes = dirty.sample(frac=0.02, random_state=15).index
+    dirty.loc[merchant_indexes, "Merchant"] = (
+        dirty.loc[merchant_indexes, "Merchant"].astype(str).str.upper()
+    )
 
-print("Data Quality Issues Injected")
+    date_formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%b-%Y"]
+    dirty["Date"] = [
+        date_value.strftime(random.choice(date_formats)) for date_value in dirty["Date"]
+    ]
 
-print(
-    "Missing Merchant:",
-    df["Merchant"].isna().sum()
-)
+    return dirty.sort_values("Transaction_ID").reset_index(drop=True)
 
-print(
-    "Missing Payment Method:",
-    df["Payment_Method"].isna().sum()
-)
 
-print(
-    "Missing Location:",
-    df["Location"].isna().sum()
-)
+def main() -> None:
+    """Generate the raw CSV file."""
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    RAW_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-print(
-    "Duplicate Rows:",
-    len(df) - len(df.drop_duplicates())
-)
+    base_df = generate_clean_base_transactions()
+    raw_df = inject_dirty_data(base_df)
+    raw_df.to_csv(RAW_OUTPUT_PATH, index=False)
 
-print(
-    "Negative Amounts:",
-    (df["Amount"] < 0).sum()
-)
+    print("=" * 50)
+    print("Dataset generated successfully")
+    print("=" * 50)
+    print(f"Rows: {len(raw_df):,}")
+    print(f"Columns: {len(raw_df.columns)}")
+    print(f"Duplicate Transaction_IDs: {raw_df['Transaction_ID'].duplicated().sum()}")
+    print(f"Missing Merchant: {raw_df['Merchant'].isna().sum()}")
+    print(f"Missing Payment Method: {raw_df['Payment_Method'].isna().sum()}")
+    print(f"Missing Location: {raw_df['Location'].isna().sum()}")
+    print(f"Negative Amounts: {(raw_df['Amount'] < 0).sum()}")
+    print(f"Dataset saved to: {RAW_OUTPUT_PATH.relative_to(PROJECT_ROOT)}")
 
-print()
 
-print(
-    "Dataset saved to:",
-    output_path
-)
-
+if __name__ == "__main__":
+    main()
